@@ -13,6 +13,7 @@
 #define FALSE 0
 #define PORT 9000
 #define BUF_SIZE 1024
+#define DEBUG 1
 
 enum GAMEFLAGS
 {
@@ -25,35 +26,125 @@ enum GAMEFLAGS
     SCISSORS,
     WIN,
     LOSE,
-    DISCONNECT
+    TIE,
+    DISCONNECT,
+    RESTART
 
 };
 
 int client_socket[2];
+int player_hands[2];
 
-int read_client(int client_num)
+int read_socket(int socket_fds)
 {
     int response = 0;
     int status = 0;
 
-    if ((status = read(client_socket[client_num], &response, BUF_SIZE)) == 0)
+    if ((status = read(socket_fds, &response, BUF_SIZE)) == 0)
     {
-        printf("\nFailed to read client %d", client_num);
+        printf("\nFailed to read socket %d\n", socket_fds);
         return -1;
+    }
+    else
+    {
+        if (DEBUG)
+        {
+            printf("\nMessage '%d' received from socket %d\n", ntohl(response), socket_fds);
+        }
     }
     return ntohl(response);
 }
 
-int send_to_client(int client_num, int message)
+int send_to_socket(int socket_fds, int raw_message)
 {
-    if (send(client_socket[client_num], &message, sizeof(message), 0) == 0)
+    int message = htonl(raw_message);
+
+    if (send(socket_fds, &message, sizeof(message), 0) != sizeof(message))
     {
-        printf("\nMessage '%d' failed to send to client %d", message, client_num);
+        printf("\nMessage '%d' failed to send to socket %d\n", raw_message, socket_fds);
         return 1;
+    }
+    else
+    {
+        if (DEBUG)
+        {
+            printf("\nMessage '%d' sent to socket %d\n", raw_message, socket_fds);
+        }
     };
     return -1;
 };
 
+int determine_winner(int player_1_hand, int player_2_hand)
+{
+    int result_flag = -1; //0 = p1 lost, 1 = p1 won, 2 = p1 tied
+    switch (player_1_hand)
+    {
+    case ROCK:
+        switch (player_2_hand)
+        {
+        case ROCK:
+            result_flag = 2;
+            break;
+        case PAPER:
+            result_flag = 0;
+            break;
+        case SCISSORS:
+            result_flag = 1;
+            break;
+        default:
+            printf("\nUnknown player 2 hand.");
+            break;
+        }
+        break;
+
+    case PAPER:
+        switch (player_2_hand)
+        {
+        case ROCK:
+            result_flag = 1;
+            break;
+        case PAPER:
+            result_flag = 2;
+            break;
+        case SCISSORS:
+            result_flag = 0;
+            break;
+        default:
+            printf("\nUnknown player 2 hand.");
+            break;
+        }
+        break;
+    case SCISSORS:
+        switch (player_2_hand)
+        {
+        case ROCK:
+            result_flag = 0;
+            break;
+        case PAPER:
+            result_flag = 1;
+            break;
+        case SCISSORS:
+            result_flag = 2;
+            break;
+        default:
+            printf("\nUnknown player 2 hand.");
+            break;
+        }
+        break;
+    default:
+        printf("\nUnknown player 1 hand: %d", player_1_hand);
+        break;
+    }
+
+    return result_flag;
+}
+void reset_game()
+{
+    for (int i = 0; i < 2; i++)
+    {
+        player_hands[i] = 0;
+    }
+}
 int main(int argc, char *argv[])
 {
 
@@ -63,23 +154,16 @@ int main(int argc, char *argv[])
     int max_sd;
     struct sockaddr_in address;
     char buffer[BUF_SIZE]; //data buffer of 1K
-
-    struct Game
-    {
-        int game_progress; //0 = unitialized, 1 = waiting for players to join, 2 = waiting for player input, 3 = sent game results
-        char player_hands[2];
-    } game_status;
+    int player_hands[2];
 
     //set of socket descriptors
     fd_set readfds;
 
-    // //a message
-    // char *message = "PLEASE ENTER YOUR USERNAME: \r\n";
-
-    //initialise all client_socket[] to 0 so not checked
+    //initialise all client_socket[] to 0 so not checked and player_hand to be 0 so unplayed
     for (i = 0; i < max_clients; i++)
     {
         client_socket[i] = 0;
+        player_hands[i] = 0;
     }
 
     //create a master socket
@@ -169,17 +253,6 @@ int main(int argc, char *argv[])
             //inform user of socket number - used in send and receive commands
             printf("New connection , socket fd is %d , ip is : %s , port : %d\n", new_socket, inet_ntoa(address.sin_addr), ntohs(address.sin_port));
 
-            //send new connection greeting message
-            int raw_message = INITIAL_CONNECTION;
-            int message = htonl(raw_message);
-
-            if (send(new_socket, &message, sizeof(message), 0) != sizeof(message))
-            {
-                perror("send");
-            }
-
-            puts("Welcome message sent successfully");
-
             //add new socket to array of sockets
             for (i = 0; i < max_clients; i++)
             {
@@ -199,42 +272,69 @@ int main(int argc, char *argv[])
 
             if (FD_ISSET(client_socket[i], &readfds))
             {
-                int response = read_client(i);
+                int response = read_socket(client_socket[i]);
 
-                //Check if it was for closing , and also read the
-                //incoming message
+                printf("\nPlayer 1 hand: %d \nPlayer 2 hand: %d ", player_hands[0], player_hands[1]);
 
-                // //Somebody disconnected , get his details and print
-                // getpeername(sd, (struct sockaddr *)&address, (socklen_t *)&addrlen);
-                printf("Host disconnected , ip %s , port %d \n", inet_ntoa(address.sin_addr),
-                       ntohs(address.sin_port));
-                // //Close the socket and mark as 0 in list for reuse
-                // close(sd);
-                // client_socket[i] = 0;
-
-                // // signal everyone else user quit
-                // char message_quit[BUF_SIZE];
-                // sprintf(message_quit, "%s quit the chat\n", usernames[i]);
-                // memset(usernames[i], 0, BUF_SIZE);
-
-                if (response == START) //Initial contact with client sockets, asking if they can join the game
+                switch (response)
                 {
+                case ZERO:
+
+                    printf("Host disconnected , ip %s , port %d \n", inet_ntoa(address.sin_addr),
+                           ntohs(address.sin_port));
+                    // //Close the socket and mark as 0 in list for reuse
+                    close(client_socket[i]);
+                    client_socket[i] = 0;
+                    break;
+                case INITIAL_CONNECTION:
                     printf("Player %d has joined the game", i);
 
-                    // //If two players have joined, send each client the start flag
-                    // if (i == 1)
-                    // {
-                    //     send(client_socket[0], 's', sizeof('s'), 0);
-                    //     send(client_socket[1], 's', sizeof('s'), 0);
-                    // }
-                    // else //If only one player has joined, send wait flag
-                    // {
-                    //     send(client_socket[0], 'w', sizeof('w'), 0);
-                    // }
-                }
-                else if (valread == 'r' | valread == 'p' | valread == 's')
-                {
-                    // game_status.player_hands[i] = valread;
+                    //If two players have joined, send each client the start flag
+                    if (i == 1)
+                    {
+                        printf("Game starting... sending start flags to each player");
+
+                        send_to_socket(client_socket[0], START);
+                        send_to_socket(client_socket[1], START);
+                    }
+                    else //If only one player has joined, send wait flag
+                    {
+                        printf("Waiting for second player join, sending wait flag to player %d", i);
+                        send_to_socket(i, WAIT);
+                    }
+                    break;
+                case ROCK:
+                case PAPER:
+                case SCISSORS:
+                    player_hands[i] = response;
+                    if (player_hands[(i + 1) % 2] != 0)
+                    {
+                        int game_result = determine_winner(player_hands[0], player_hands[1]);
+                        switch (game_result)
+                        {
+                        case 0:
+                            send_to_socket(client_socket[0], LOSE);
+                            send_to_socket(client_socket[1], WIN);
+                            break;
+                        case 1:
+                            send_to_socket(client_socket[0], WIN);
+                            send_to_socket(client_socket[1], LOSE);
+                            break;
+                        case 2:
+                            send_to_socket(client_socket[0], TIE);
+                            send_to_socket(client_socket[1], TIE);
+                            break;
+                        default:
+                            break;
+                        }
+                    }
+                    break;
+                case RESTART:
+                    reset_game();
+                    break;
+                default:
+                    printf("\nUnknown response '%d' received from player %d", response, i);
+                    break;
                 }
             }
     }
