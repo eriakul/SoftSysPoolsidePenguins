@@ -34,6 +34,7 @@ if (DEBUG)
         }
 ```
 
+If I had more time, I would pull the shared functions and enum between the client and server into its own file. 
 
 **What resources did you find that were useful to you.**
 
