@@ -9,6 +9,7 @@
 #define PORT 9000
 #define BUF_SIZE 1024
 #define DEBUG 0
+
 const char *ROCK_ASCII[] = {
     "    _______\n",
     "---'   ____)\n",
