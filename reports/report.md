@@ -1,5 +1,5 @@
-#Commandline Rock Paper Scissors
-####Erika Lu####
+# Commandline Rock Paper Scissors
+#### Erika Lu####
 
 **What is the goal of your project; for example, what do you plan to make, and what should it do?**
 
